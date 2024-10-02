@@ -4,7 +4,7 @@
 #include "common.h"
 #include <Eigen/Core>
 #include <Eigen/Eigenvalues>
-#include <cv_bridge/cv_bridge.h>
+#include <cv_bridge/cv_bridge.hpp>
 #include <fstream>
 #include <iostream>
 #include <opencv2/opencv.hpp>
@@ -56,6 +56,13 @@ public:
   int line_number_ = 0;
   int color_intensity_threshold_ = 5;
   Eigen::Vector3d adjust_euler_angle_;
+
+  // New members for rough calibration and matching parameters
+  double rough_calib_resolution_;
+  int rough_calib_max_iter_;
+  float match_distance_threshold_;
+  int match_max_iterations_;
+
   Calibration(const rclcpp::NodeOptions & options);
   void initializeCalib(const std::string &image_file, const std::string &pcd_file,
               const std::string &calib_config_file);
@@ -224,6 +231,11 @@ void Calibration::initializeCalib(const std::string &image_file,
   initVoxel(raw_lidar_cloud_, voxel_size_, voxel_map);
   LiDAREdgeExtraction(voxel_map, ransac_dis_threshold_, plane_size_threshold_,
                       plane_line_cloud_);
+
+  if (plane_line_cloud_->empty()) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to extract LiDAR edges. plane_line_cloud_ is empty.");
+    return;
+  }
 };
 
 bool Calibration::loadCameraConfig(const std::string &camera_file) {
@@ -284,6 +296,13 @@ bool Calibration::loadCalibConfig(const std::string &config_file) {
   direction_theta_min_ = cos(DEG2RAD(30.0));
   direction_theta_max_ = cos(DEG2RAD(150.0));
   color_intensity_threshold_ = fSettings["Color.intensity_threshold"];
+
+  // Load rough calibration and matching parameters
+  rough_calib_resolution_ = fSettings["RoughCalib.resolution"];
+  rough_calib_max_iter_ = fSettings["RoughCalib.max_iter"];
+  match_distance_threshold_ = fSettings["Match.distance_threshold"];
+  match_max_iterations_ = fSettings["Match.max_iterations"];
+
   return true;
 };
 
@@ -425,7 +444,7 @@ void Calibration::projection(
         sqrt(pow(point_3d.x, 2) + pow(point_3d.y, 2) + pow(point_3d.z, 2));
     // Reject points behind the camera and too far away
     // TODO: reject points based on camera FoV + error
-    if (depth > min_depth_ && depth < max_depth_ && point_3d.x > 0) {
+    if (depth > min_depth_ && depth < max_depth_) {
       pts_3d.emplace_back(cv::Point3f(point_3d.x, point_3d.y, point_3d.z));
       intensity_list.emplace_back(lidar_cloud->points[i].intensity);
     }
@@ -805,6 +824,10 @@ void Calibration::LiDAREdgeExtraction(
       }
     }
   }
+
+  RCLCPP_INFO(this->get_logger(), "Extracted %zu points for lidar edge", plane_line_cloud_->size());
+
+  *lidar_line_cloud_3d = *plane_line_cloud_;
 }
 
 void Calibration::calcLine(
@@ -1013,6 +1036,10 @@ void Calibration::buildVPnp(
     const pcl::PointCloud<pcl::PointXYZ>::Ptr &cam_edge_cloud_2d,
     const pcl::PointCloud<pcl::PointXYZI>::Ptr &lidar_line_cloud_3d,
     std::vector<VPnPData> &pnp_list) {
+  if (lidar_line_cloud_3d->empty()) {
+    RCLCPP_WARN(this->get_logger(), "lidar_line_cloud_3d is empty. Skipping buildVPnp.");
+    return;
+  }
   pnp_list.clear();
   std::vector<std::vector<std::vector<pcl::PointXYZI>>> img_pts_container;
   for (int y = 0; y < height_; y++) {
@@ -1048,11 +1075,11 @@ void Calibration::buildVPnp(
   // project 3d-points into image view
   std::vector<cv::Point2d> pts_2d;
   // debug
-  // std::cout << "camera_matrix:" << camera_matrix << std::endl;
-  // std::cout << "distortion_coeff:" << distortion_coeff << std::endl;
-  // std::cout << "r_vec:" << r_vec << std::endl;
-  // std::cout << "t_vec:" << t_vec << std::endl;
-  // std::cout << "pts 3d size:" << pts_3d.size() << std::endl;
+//   std::cout << "camera_matrix:" << camera_matrix << std::endl;
+//   std::cout << "distortion_coeff:" << distortion_coeff << std::endl;
+//   std::cout << "r_vec:" << r_vec << std::endl;
+//   std::cout << "t_vec:" << t_vec << std::endl;
+//   std::cout << "pts 3d size:" << pts_3d.size() << std::endl;
   cv::projectPoints(pts_3d, r_vec, t_vec, camera_matrix, distortion_coeff,
                     pts_2d);
   pcl::PointCloud<pcl::PointXYZ>::Ptr line_edge_cloud_2d(

@@ -17,11 +17,11 @@ def get_rosbag_options(path, serialization_format='cdr'):
 
     return storage_options, converter_options
 
-dir='/home/xxxx/gv-bags/outdoor_translation_4/'
+dir='/ssd/adam/mordor/outputs/rosbag/lidar_camera_pair_20240926_153745'
 
 
 # for filename in os.listdir(dir):
-img_path="/home/xxxx/gv_ws/outdoor_translation_4/img.png"
+img_path="/ssd/adam/mordor/src/ros2_ws/img.png"
 print(img_path)
 # total_filename=os.path.join(dir,filename)
 

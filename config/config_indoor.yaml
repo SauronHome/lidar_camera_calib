@@ -32,3 +32,13 @@ Plane.max_size: 8
 Ransac.dis_threshold: 0.02
 Edge.min_dis_threshold: 0.03
 Edge.max_dis_threshold: 0.06
+
+# Rough calibration parameters
+RoughCalib:
+  resolution: 0.1  # in degrees
+  max_iterations: 50
+
+# Matching parameters
+Match:
+  distance_threshold: 30  # in pixels
+  max_iterations: 2

@@ -138,9 +138,13 @@ private:
   VPnPData pd;
 };
 
-void roughCalib(Calibration &calibra, Vector6d &calib_params,
-                double search_resolution, int max_iter) {
-  float match_dis = 25;
+void roughCalib(Calibration &calibra, Vector6d &calib_params) {
+  float match_dis = calibra.match_distance_threshold_;
+  RCLCPP_INFO(calibra.get_logger(), "Starting rough calibration with:");
+  RCLCPP_INFO(calibra.get_logger(), "  Search resolution: %f degrees", calibra.rough_calib_resolution_);
+  RCLCPP_INFO(calibra.get_logger(), "  Max iterations: %d", calibra.rough_calib_max_iter_);
+  RCLCPP_INFO(calibra.get_logger(), "  Match distance: %f pixels", match_dis);
+
   Eigen::Vector3d fix_adjust_euler(0, 0, 0);
   for (int n = 0; n < 2; n++) {
     for (int round = 0; round < 3; round++) {
@@ -150,10 +154,10 @@ void roughCalib(Calibration &calibra, Vector6d &calib_params,
             Eigen::AngleAxisd(calib_params[2], Eigen::Vector3d::UnitX());
       // std::cout << "init rot" << rot << std::endl;
       float min_cost = 1000;
-      for (int iter = 0; iter < max_iter; iter++) {
+      for (int iter = 0; iter < calibra.rough_calib_max_iter_; iter++) {
         Eigen::Vector3d adjust_euler = fix_adjust_euler;
         adjust_euler[round] = fix_adjust_euler[round] +
-                              pow(-1, iter) * int(iter / 2) * search_resolution;
+                              pow(-1, iter) * int(iter / 2) * calibra.rough_calib_resolution_;
         Eigen::Matrix3d adjust_rotation_matrix;
         adjust_rotation_matrix =
             Eigen::AngleAxisd(adjust_euler[0], Eigen::Vector3d::UnitZ()) *
@@ -285,7 +289,9 @@ int main(int argc, char **argv) {
   cv::waitKey(1000);
 
   if (use_rough_calib) {
-    roughCalib(calibra, calib_params, DEG2RAD(0.1), 50);
+    RCLCPP_INFO(node->get_logger(), "Starting rough calibration");
+    roughCalib(calibra, calib_params);
+    RCLCPP_INFO(node->get_logger(), "Finished rough calibration");
   }
   cv::Mat test_img = calibra.getProjectionImg(calib_params);
   cv::namedWindow("After rough extrinsic", cv::WINDOW_NORMAL);
@@ -296,14 +302,17 @@ int main(int argc, char **argv) {
   // Maximum match distance threshold: 15 pixels
   // If initial extrinsic lead to error over 15 pixels, the algorithm will not
   // work
-  int dis_threshold = 30;
+  int dis_threshold = calibra.match_distance_threshold_;
   bool opt_flag = true;
 
-  // TODO: make optimization a function and 
-  // Iteratively reducve the matching distance threshold
-  for (dis_threshold = 30; dis_threshold > 10; dis_threshold -= 1) {
+  RCLCPP_INFO(node->get_logger(), "Starting optimization with initial distance threshold: %d pixels", dis_threshold);
+
+  // Iteratively reduce the matching distance threshold
+  for (dis_threshold = calibra.match_distance_threshold_; dis_threshold > 10; dis_threshold -= 1) {
+    RCLCPP_INFO(node->get_logger(), "Optimization iteration with distance threshold: %d pixels", dis_threshold);
     // For each distance, do twice optimization
-    for (int cnt = 0; cnt < 2; cnt++) {
+    for (int cnt = 0; cnt < calibra.match_max_iterations_; cnt++) {
+      RCLCPP_INFO(node->get_logger(), "  Sub-iteration %d of %d", cnt + 1, calibra.match_max_iterations_);
       if (use_vpnp) {
         calibra.buildVPnp(calib_params, dis_threshold, true,
                           calibra.rgb_egde_cloud_, calibra.plane_line_cloud_,
@@ -396,6 +405,8 @@ int main(int argc, char **argv) {
       break;
     }
   }
+
+  RCLCPP_INFO(node->get_logger(), "Finished optimization");
 
   rclcpp::Rate loop(0.5);
   // roughCalib(calibra, calib_params, DEG2RAD(0.01), 20);
