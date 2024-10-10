@@ -420,11 +420,10 @@ void Calibration::edgeDetector(
   }
   edge_cloud->width = edge_cloud->points.size();
   edge_cloud->height = 1;
-  // cv::imshow("canny result", canny_result);
-  // cv::imshow("edge result", edge_img);
-  // cv::waitKey();
+  cv::imshow("canny result", canny_result);
+  cv::imshow("edge result", edge_img);
+  cv::waitKey();
 }
-
 void Calibration::projection(
     const Vector6d &extrinsic_params,
     const pcl::PointCloud<pcl::PointXYZI>::Ptr &lidar_cloud,
